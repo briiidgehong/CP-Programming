@@ -56,3 +56,182 @@ python concurrency / parallelism programming
 
 - 일반적으로 다른 언어들에서는 멀티쓰레딩을 이용해서, 
   병렬성 프로그래밍을 할 수 있다.
+
+# NETWORK BOUND
+- 결론: 네트워크 바운드 코드는 코루틴 함수(async, await) 활용
+```
+# SINGLE PROCESS(=CORE) - SINGLE THREAD - SYNC
+# https://2.python-requests.org/en/master/user/advanced/#id1
+import requests, time, os, threading
+
+def fetcher(session, url):
+    print(f"{os.getpid()} process | {threading.get_ident()} url : {url}")
+    with session.get(url) as response:
+        return response.text
+
+def main():
+    urls = ["https://google.com", "https://apple.com"] * 50
+    with requests.Session() as session:
+        result = [fetcher(session, url) for url in urls]
+        # print(result)
+
+if __name__ == "__main__":
+    start = time.time()
+    main()
+    end = time.time()
+    print(end - start)  # 15.2 sec
+```
+```
+# CONCERRENCY
+# SINGLE PROCESS(=CORE) - SINGLE THREAD - ASYNC
+# https://docs.aiohttp.org/en/stable/
+import aiohttp, time, asyncio, os, threading
+
+async def fetcher(session, url):
+    print(f"{os.getpid()} process | {threading.get_ident()} url : {url}")
+    async with session.get(url) as response:
+        return await response.text()
+
+async def main():
+    urls = ["https://google.com", "https://apple.com"] * 50
+    async with aiohttp.ClientSession() as session:
+        result = await asyncio.gather(*[fetcher(session, url) for url in urls])
+        # print(result)
+
+if __name__ == "__main__":
+    start = time.time()
+    asyncio.run(main())
+    end = time.time()
+    print(end - start)  # 2.5 sec
+```
+- aiohttp에서 제공하는 코루틴 FUNC가 없다면, 어떻게 동시성 프로그램을 구현할것인가?
+	- 멀티스레드로 구현!
+	- 기존에 동기적으로 작성된 코드를 동시성 프로그래밍 코드로 변환할때에 사용!
+	- 코루틴(async, await)으로 작성된 코드를 사용하는 것이 더 좋음
+		- 어차피 GIL때문에, 병렬성 프로그래밍이 불가능
+		- 쓰레드를 만들고 우선순위를 부여하는 비용이 크기 때문
+		- 참고로 다른 언어들에서는 멀티쓰레딩으로 병렬성 프로그래밍 가능
+```
+# CONCERRENCY (그러나, 파이썬의 GIL때문에, PARALLELISM은 불가능)
+# SINGLE PROCESS(=CORE) - MULTI THREAD - ASYNC
+# https://docs.python.org/3.7/library/concurrent.futures.html#concurrent.futures.ThreadPoolExecutor
+import requests, time, os, threading
+from concurrent.futures import ThreadPoolExecutor
+
+def fetcher(params):
+    session = params[0]
+    url = params[1]
+    print(f"{os.getpid()} process | {threading.get_ident()} url : {url}")
+    with session.get(url) as response:
+        return response.text
+
+def main():
+    urls = ["https://google.com", "https://apple.com"] * 50
+
+    executor = ThreadPoolExecutor(max_workers=30)
+
+    with requests.Session() as session:
+        # result = [fetcher(session, url) for url in urls]
+        # print(result)
+        params = [(session, url) for url in urls]
+        results = list(executor.map(fetcher, params))
+        # print(results)
+
+if __name__ == "__main__":
+    start = time.time()
+    main()
+    end = time.time()
+    print(end - start)  # 2 sec
+```
+
+# CPU BOUND
+- 결론: CPU BOUND 코드는 멀티 프로세싱 사용
+- 파이썬 멀티 쓰레딩은 동시성을 사용하여 NETWORK IO BOUND 
+  코드에서 유용하게 사용할 수 있지만, 
+  CPU BOUND 코드에서는 GIL때문에 원하는만큼 성능이 나오지 않는다.
+  이때, <멀티 프로세싱을 통해 성능의 이점을 취한다.>
+```
+# SINGLE PROCESS(=CORE) - SINGLE THREAD - SYNC
+import time, os, threading
+
+nums = [30] * 100
+
+def cpu_bound_func(num):
+    print(f"{os.getpid()} process | {threading.get_ident()} thread")
+    numbers = range(1, num)
+    total = 1
+    for i in numbers:
+        for j in numbers:
+            for k in numbers:
+                total *= i * j * k
+    return total
+
+def main():
+    results = [cpu_bound_func(num) for num in nums]
+    # print(results)
+
+if __name__ == "__main__":
+    start = time.time()
+    main()
+    end = time.time()
+    print(end - start)  # 10.35
+```
+```
+# CONCERRENCY (그러나, 파이썬의 GIL때문에, PARALLELISM은 불가능)
+# SINGLE PROCESS(=CORE) - MULTI THREAD - ASYNC
+import time, os, threading
+from concurrent.futures import ThreadPoolExecutor
+
+nums = [30] * 100
+
+def cpu_bound_func(num):
+    print(f"{os.getpid()} process | {threading.get_ident()} thread, {num}")
+    numbers = range(1, num)
+    total = 1
+    for i in numbers:
+        for j in numbers:
+            for k in numbers:
+                total *= i * j * k
+    return total
+
+def main():
+    executor = ThreadPoolExecutor(max_workers=30)
+    results = list(executor.map(cpu_bound_func, nums))
+    # print(results)
+
+if __name__ == "__main__":
+    start = time.time()
+    main()
+    end = time.time()
+    print(end - start)  # 10.02 sec
+
+```
+```
+# CONCERRENCY, PARALLELISM
+# MULTI PROCESS(=CORE) - MULTI THREAD - ASYNC
+import time, os, threading
+from concurrent.futures import ProcessPoolExecutor
+
+nums = [30] * 100
+
+def cpu_bound_func(num):
+    print(f"{os.getpid()} process | {threading.get_ident()} thread, {num}")
+    numbers = range(1, num)
+    total = 1
+    for i in numbers:
+        for j in numbers:
+            for k in numbers:
+                total *= i * j * k
+    return total
+
+def main():
+    executor = ProcessPoolExecutor(max_workers=10)
+    results = list(executor.map(cpu_bound_func, nums))
+    # print(results)
+
+if __name__ == "__main__":
+    start = time.time()
+    main()
+    end = time.time()
+    print(end - start)  # 2.13
+```
