@@ -2,13 +2,13 @@
 # https://docs.aiohttp.org/en/stable/
 # pip install aiohttp~=3.7.3
 
-
 import aiohttp, time, asyncio, os, threading
-
 
 async def fetcher(session, url):
     print(f"{os.getpid()} process | {threading.get_ident()} url : {url}")
+    print("before-code")
     async with session.get(url) as response:
+        print("after-code")
         return await response.text()
 
 

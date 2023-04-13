@@ -6,7 +6,9 @@ import requests, time, os, threading
 
 def fetcher(session, url):
     print(f"{os.getpid()} process | {threading.get_ident()} url : {url}")
+    print("before-code")
     with session.get(url) as response:
+        print("after-code")
         return response.text
 
 
